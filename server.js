@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import pkg from 'pg';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import YooKassa from 'yookassa-sdk';
+import YooKassa from 'yookassa';
 
 dotenv.config();
 
