@@ -12,6 +12,6 @@
     "pg": "^8.11.0",
     "bcrypt": "^5.1.1",
     "jsonwebtoken": "^9.0.2",
-    "yookassa": "^2.0.0"
+    "yookassa": "^3.10.0"
   }
 }
