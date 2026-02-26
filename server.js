@@ -44,19 +44,29 @@ const authenticateToken = (req, res, next) => {
 
 // Регистрация (с поддержкой email и реферальной ссылки)
 app.post('/api/register', async (req, res) => {
-  const { username, email, password, ref } = req.body;
+  // Извлекаем все поля, включая role
+  const { username, email, password, ref, role } = req.body;
+  
+  // Проверяем, что все обязательные поля есть
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'Все поля обязательны' });
   }
+
   try {
+    // Хешируем пароль
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Вставляем пользователя в базу
     const result = await pool.query(
-      'INSERT INTO users (username, email, password, referred_by) VALUES ($1, $2, $3, $4) RETURNING id',
-      [username, email, hashedPassword, ref || null]
+      `INSERT INTO users (username, email, password, referred_by, role) 
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [username, email, hashedPassword, ref || null, role || 'subscriber'] // если role не указана, ставим subscriber
     );
+
     res.status(201).json({ id: result.rows[0].id });
   } catch (err) {
     if (err.code === '23505') {
+      // Ошибка уникальности (пользователь уже есть)
       res.status(400).json({ error: 'Пользователь с таким именем или email уже существует' });
     } else {
       console.error(err);
