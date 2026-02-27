@@ -1,4 +1,5 @@
 import axios from 'axios';
+import https from 'https'; // добавьте этот импорт
 
 class GigaChatService {
   constructor() {
@@ -11,7 +12,6 @@ class GigaChatService {
   }
 
   async getAccessToken() {
-    // Ленивая инициализация переменных окружения
     if (!this.clientId) {
       this.clientId = process.env.GIGACHAT_CLIENT_ID;
       this.clientSecret = process.env.GIGACHAT_CLIENT_SECRET;
@@ -26,19 +26,22 @@ class GigaChatService {
 
     try {
       const response = await axios.post(this.authUrl, 
-        'scope=GIGACHAT_API_PERS', {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-          'Authorization': `Basic ${Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64')}`
+        'scope=GIGACHAT_API_PERS', 
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json',
+            'Authorization': `Basic ${Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64')}`
+          },
+          httpsAgent: new https.Agent({ rejectUnauthorized: false }) // 👈 игнорируем SSL
         }
-      });
+      );
 
       this.accessToken = response.data.access_token;
       this.tokenExpires = Date.now() + (response.data.expires_at - response.data.issued_at) * 1000;
       return this.accessToken;
     } catch (error) {
-      console.error('Ошибка получения токена GigaChat:', error);
+      console.error('Ошибка получения токена GigaChat:', error.message);
       throw new Error('Не удалось получить токен доступа');
     }
   }
@@ -55,7 +58,8 @@ class GigaChatService {
         temperature: 0.7,
         max_tokens: 500
       }, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}` },
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }) // 👈 и здесь
       });
 
       const result = response.data.choices[0]?.message?.content;
@@ -64,7 +68,7 @@ class GigaChatService {
       }
       return result;
     } catch (error) {
-      console.error('Ошибка генерации текста:', error);
+      console.error('Ошибка генерации текста:', error.message);
       throw new Error('Не удалось получить данные от GigaChat');
     }
   }
@@ -73,7 +77,7 @@ class GigaChatService {
     const prompt = `Придумай 5 идей для постов на тему "${topic}". 
       Каждая идея должна быть краткой, цепляющей и содержать заголовок.
       Формат ответа: просто список через дефис, без лишнего текста.`;
-    return await this.generateText(prompt, 'Ты креативный копирайтер');
+    return await this.generateText(prompt, 'Ты креативный кпирайтер');
   }
 
   async getTrends() {
