@@ -1,19 +1,19 @@
 import axios from 'axios';
-import jwt from 'jsonwebtoken';
 
 class GigaChatService {
   constructor() {
     this.clientId = process.env.GIGACHAT_CLIENT_ID;
     this.clientSecret = process.env.GIGACHAT_CLIENT_SECRET;
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('GIGACHAT_CLIENT_ID и GIGACHAT_CLIENT_SECRET должны быть заданы');
+    }
     this.authUrl = 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth';
     this.apiUrl = 'https://gigachat.devices.sberbank.ru/api/v1/chat/completions';
     this.accessToken = null;
     this.tokenExpires = null;
   }
 
-  // Получение токена доступа
   async getAccessToken() {
-    // Если токен ещё действителен, возвращаем его
     if (this.accessToken && this.tokenExpires > Date.now()) {
       return this.accessToken;
     }
@@ -33,15 +33,13 @@ class GigaChatService {
       return this.accessToken;
     } catch (error) {
       console.error('Ошибка получения токена GigaChat:', error);
-      throw error;
+      throw new Error('Не удалось получить токен доступа');
     }
   }
 
-  // Генерация текста
   async generateText(prompt, systemPrompt = 'Ты полезный ассистент') {
     try {
       const token = await this.getAccessToken();
-      
       const response = await axios.post(this.apiUrl, {
         model: 'GigaChat',
         messages: [
@@ -51,29 +49,27 @@ class GigaChatService {
         temperature: 0.7,
         max_tokens: 500
       }, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      return response.data.choices[0].message.content;
+      const result = response.data.choices[0]?.message?.content;
+      if (!result) {
+        throw new Error('GigaChat вернул пустой ответ');
+      }
+      return result;
     } catch (error) {
       console.error('Ошибка генерации текста:', error);
-      return null;
+      throw new Error('Не удалось получить данные от GigaChat');
     }
   }
 
-  // Генерация идей для постов
   async generatePostIdeas(topic) {
     const prompt = `Придумай 5 идей для постов на тему "${topic}". 
       Каждая идея должна быть краткой, цепляющей и содержать заголовок.
       Формат ответа: просто список через дефис, без лишнего текста.`;
-    
     return await this.generateText(prompt, 'Ты креативный копирайтер');
   }
 
-  // Анализ трендов (имитация через AI)
   async getTrends() {
     const prompt = `Какие темы сейчас в топе в социальных сетях по категориям:
       - Фитнес
@@ -81,7 +77,6 @@ class GigaChatService {
       - Кулинария
       - Образование
       Дай краткий список из 5 пунктов.`;
-    
     return await this.generateText(prompt, 'Ты маркетолог-аналитик');
   }
 }
