@@ -5,6 +5,8 @@ import pkg from 'pg';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import YooKassa from 'yookassa';
+import gigachatService from './services/gigachat.js';
+import cron from 'node-cron';
 
 dotenv.config();
 
@@ -72,6 +74,144 @@ app.post('/api/register', async (req, res) => {
       console.error(err);
       res.status(500).json({ error: 'Внутренняя ошибка сервера' });
     }
+  }
+});
+
+// Отслеживание просмотра поста
+app.post('/api/track-view', authenticateToken, async (req, res) => {
+  const { postId, duration } = req.body;
+  const userId = req.user.id;
+
+  try {
+    await pool.query(
+      'INSERT INTO content_views (user_id, post_id, view_duration) VALUES ($1, $2, $3)',
+      [userId, postId, duration || null]
+    );
+    res.sendStatus(200);
+  } catch (err) {
+    console.error(err);
+    res.sendStatus(500);
+  }
+});
+
+// Оценка автора (лайк/дизлайк)
+app.post('/api/rate-creator', authenticateToken, async (req, res) => {
+  const { creatorId, score } = req.body;
+  const userId = req.user.id;
+
+  if (score < -5 || score > 5) {
+    return res.status(400).json({ error: 'Оценка должна быть от -5 до 5' });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO user_preferences (user_id, creator_id, preference_score)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, creator_id) 
+       DO UPDATE SET preference_score = $3, updated_at = CURRENT_TIMESTAMP`,
+      [userId, creatorId, score]
+    );
+    res.sendStatus(200);
+  } catch (err) {
+    console.error(err);
+    res.sendStatus(500);
+  }
+});
+
+// Получение персональных рекомендаций
+app.get('/api/recommendations', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const limit = parseInt(req.query.limit) || 10;
+
+  try {
+    // Простая коллаборативная фильтрация:
+    // 1. Находим похожих пользователей
+    const similarUsers = await pool.query(`
+      SELECT user2_id, similarity_score 
+      FROM user_similarity 
+      WHERE user1_id = $1 
+      ORDER BY similarity_score DESC 
+      LIMIT 5
+    `, [userId]);
+
+    if (similarUsers.rows.length === 0) {
+      // Если нет похожих пользователей, рекомендуем популярное
+      const popularPosts = await pool.query(`
+        SELECT p.*, c.name as creator_name, 
+               COUNT(v.id) as view_count
+        FROM posts p
+        JOIN creators c ON p.creator_id = c.id
+        LEFT JOIN content_views v ON p.id = v.post_id
+        WHERE p.is_paid = false
+        GROUP BY p.id, c.name
+        ORDER BY view_count DESC
+        LIMIT $1
+      `, [limit]);
+      
+      return res.json(popularPosts.rows);
+    }
+
+    // 2. Берём посты, которые нравятся похожим пользователям
+    const similarUserIds = similarUsers.rows.map(r => r.user2_id);
+    
+    const recommendations = await pool.query(`
+      SELECT DISTINCT p.*, c.name as creator_name,
+             AVG(up.preference_score) as avg_preference
+      FROM posts p
+      JOIN creators c ON p.creator_id = c.id
+      JOIN user_preferences up ON c.id = up.creator_id
+      WHERE up.user_id = ANY($1::int[])
+        AND up.preference_score > 0
+        AND p.is_paid = false
+        AND p.creator_id NOT IN (
+          SELECT creator_id FROM subscriptions WHERE user_id = $2
+        )
+      GROUP BY p.id, c.name
+      ORDER BY avg_preference DESC
+      LIMIT $3
+    `, [similarUserIds, userId, limit]);
+
+    res.json(recommendations.rows);
+  } catch (err) {
+    console.error('Ошибка получения рекомендаций:', err);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Фоновое обновление сходства пользователей (можно вызвать по расписанию)
+app.post('/api/update-similarity', async (req, res) => {
+  const secret = req.headers['x-update-secret'];
+  if (secret !== process.env.UPDATE_SECRET) {
+    return res.sendStatus(403);
+  }
+
+  try {
+    // Очищаем старые данные
+    await pool.query('TRUNCATE user_similarity');
+
+    // Вставляем новые данные на основе общих подписок
+    await pool.query(`
+      INSERT INTO user_similarity (user1_id, user2_id, similarity_score)
+      WITH subscriptions_agg AS (
+        SELECT user_id, array_agg(creator_id) as creators
+        FROM subscriptions
+        GROUP BY user_id
+      )
+      SELECT 
+        a.user_id AS user1_id,
+        b.user_id AS user2_id,
+        CAST(ARRAY_LENGTH(a.creators & b.creators, 1) AS FLOAT) / 
+        CAST(ARRAY_LENGTH(a.creators | b.creators, 1) AS FLOAT) AS similarity
+      FROM subscriptions_agg a
+      JOIN subscriptions_agg b ON a.user_id < b.user_id
+      WHERE ARRAY_LENGTH(a.creators, 1) > 0 
+        AND ARRAY_LENGTH(b.creators, 1) > 0
+    `);
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('Ошибка обновления сходства:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
@@ -312,6 +452,79 @@ app.post('/api/notifications/read/:id', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+// Генерация идей для поста (AI)
+app.post('/api/ai/generate-ideas', authenticateToken, async (req, res) => {
+  const { topic } = req.body;
+  
+  // Проверяем, что тема передана
+  if (!topic) {
+    return res.status(400).json({ error: 'Укажите тему' });
+  }
+
+  try {
+    // Вызываем метод сервиса GigaChat
+    const ideas = await gigachatService.generatePostIdeas(topic);
+    
+    // Отправляем результат обратно клиенту
+    res.json({ ideas });
+  } catch (error) {
+    console.error('Ошибка генерации идей:', error);
+    res.status(500).json({ error: 'Ошибка генерации' });
+  }
+});
+
+// Получение трендов (AI)
+app.get('/api/ai/trends', authenticateToken, async (req, res) => {
+  try {
+    // Проверяем, что пользователь - автор
+    if (req.user.role !== 'creator') {
+      return res.status(403).json({ error: 'Только для авторов' });
+    }
+
+    const trends = await gigachatService.getTrends();
+    res.json({ trends });
+  } catch (error) {
+    console.error('Ошибка получения трендов:', error);
+    res.status(500).json({ error: 'Ошибка получения трендов' });
+  }
+});
+
+// Улучшение текста поста (AI)
+app.post('/api/ai/enhance-post', authenticateToken, async (req, res) => {
+  const { text } = req.body;
+  
+  if (!text) {
+    return res.status(400).json({ error: 'Введите текст' });
+  }
+
+  try {
+    const enhanced = await gigachatService.generateText(
+      `Улучши этот текст для социальных сетей: "${text}". Сделай его более цепляющим, добавь эмоций, но сохрани смысл.`
+    );
+    res.json({ enhanced });
+  } catch (error) {
+    console.error('Ошибка улучшения текста:', error);
+    res.status(500).json({ error: 'Ошибка улучшения' });
+  }
+});
+
+// Планировщик для обновления матрицы сходства каждый день в 3:00 утра
+cron.schedule('0 3 * * *', async () => {
+  console.log('Запуск ежедневного обновления рекомендаций...');
+  try {
+    // Вызываем эндпоинт обновления локально (через внутренний запрос)
+    // Можно просто выполнить SQL напрямую, но проще вызвать эндпоинт
+    const response = await axios.post(
+      `http://localhost:${PORT}/api/update-similarity`,
+      {},
+      { headers: { 'x-update-secret': process.env.UPDATE_SECRET } }
+    );
+    console.log('Обновление выполнено, статус:', response.status);
+  } catch (error) {
+    console.error('Ошибка при плановом обновлении:', error.message);
   }
 });
 
