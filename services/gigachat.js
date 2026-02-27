@@ -40,10 +40,18 @@ class GigaChatService {
       this.accessToken = response.data.access_token;
       this.tokenExpires = Date.now() + (response.data.expires_at - response.data.issued_at) * 1000;
       return this.accessToken;
-    } catch (error) {
-      console.error('Ошибка получения токена GigaChat:', error.message);
-      throw new Error('Не удалось получить токен доступа');
-    }
+} catch (error) {
+  console.error('Ошибка получения токена GigaChat:', error.message);
+  if (error.response) {
+    console.error('Статус:', error.response.status);
+    console.error('Детали ответа:', error.response.data);
+  } else if (error.request) {
+    console.error('Запрос был отправлен, но ответ не получен');
+  } else {
+    console.error('Ошибка настройки запроса:', error.message);
+  }
+  throw new Error('Не удалось получить токен доступа');
+}
   }
 
   async generateText(prompt, systemPrompt = 'Ты полезный ассистент') {
