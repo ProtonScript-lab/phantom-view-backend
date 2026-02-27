@@ -2,11 +2,8 @@ import axios from 'axios';
 
 class GigaChatService {
   constructor() {
-    this.clientId = process.env.GIGACHAT_CLIENT_ID;
-    this.clientSecret = process.env.GIGACHAT_CLIENT_SECRET;
-    if (!this.clientId || !this.clientSecret) {
-      throw new Error('GIGACHAT_CLIENT_ID и GIGACHAT_CLIENT_SECRET должны быть заданы');
-    }
+    this.clientId = null;
+    this.clientSecret = null;
     this.authUrl = 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth';
     this.apiUrl = 'https://gigachat.devices.sberbank.ru/api/v1/chat/completions';
     this.accessToken = null;
@@ -14,6 +11,15 @@ class GigaChatService {
   }
 
   async getAccessToken() {
+    // Ленивая инициализация переменных окружения
+    if (!this.clientId) {
+      this.clientId = process.env.GIGACHAT_CLIENT_ID;
+      this.clientSecret = process.env.GIGACHAT_CLIENT_SECRET;
+      if (!this.clientId || !this.clientSecret) {
+        throw new Error('GIGACHAT_CLIENT_ID и GIGACHAT_CLIENT_SECRET должны быть заданы в .env');
+      }
+    }
+
     if (this.accessToken && this.tokenExpires > Date.now()) {
       return this.accessToken;
     }
