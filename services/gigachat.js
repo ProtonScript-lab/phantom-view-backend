@@ -1,116 +1,143 @@
+
 import axios from 'axios';
-import https from 'https'; // добавьте этот импорт
+import https from 'https';
+import crypto from 'crypto';
 
 class GigaChatService {
   constructor() {
-    this.clientId = null;
-    this.clientSecret = null;
+    this.clientId = process.env.GIGACHAT_CLIENT_ID;
+    this.clientSecret = process.env.GIGACHAT_CLIENT_SECRET;
+
+    if (!this.clientId || !this.clientSecret) {
+      throw new Error('GIGACHAT_CLIENT_ID и GIGACHAT_CLIENT_SECRET должны быть заданы в .env');
+    }
+
     this.authUrl = 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth';
     this.apiUrl = 'https://gigachat.devices.sberbank.ru/api/v1/chat/completions';
+
     this.accessToken = null;
-    this.tokenExpires = null;
+    this.tokenExpires = 0;
   }
 
   async getAccessToken() {
-    if (!this.clientId) {
-      this.clientId = process.env.GIGACHAT_CLIENT_ID;
-      this.clientSecret = process.env.GIGACHAT_CLIENT_SECRET;
-      if (!this.clientId || !this.clientSecret) {
-        throw new Error('GIGACHAT_CLIENT_ID и GIGACHAT_CLIENT_SECRET должны быть заданы в .env');
-      }
-    }
-
-    if (this.accessToken && this.tokenExpires > Date.now()) {
+    if (this.accessToken && Date.now() < this.tokenExpires) {
       return this.accessToken;
     }
 
+    const auth = Buffer
+      .from(`${this.clientId}:${this.clientSecret}`)
+      .toString('base64');
+
     try {
-      const response = await axios.post(this.authUrl, 
-        'scope=GIGACHAT_API_PERS', 
+      const response = await axios.post(
+        this.authUrl,
+        new URLSearchParams({
+          scope: 'GIGACHAT_API_PERS',
+          grant_type: 'client_credentials'
+        }).toString(),
         {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'Accept': 'application/json',
-            'Authorization': `Basic ${Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64')}`
+            'Authorization': `Basic ${auth}`,
+            'RqUID': crypto.randomUUID()
           },
-          httpsAgent: new https.Agent({ rejectUnauthorized: false }) // 👈 игнорируем SSL
+          httpsAgent: new https.Agent({
+            rejectUnauthorized: false // ⚠️ убрать в production
+          })
         }
       );
 
       this.accessToken = response.data.access_token;
-      this.tokenExpires = Date.now() + (response.data.expires_at - response.data.issued_at) * 1000;
+
+      // expires_in приходит в секундах
+      this.tokenExpires = Date.now() + (response.data.expires_in * 1000 - 10000);
+
       return this.accessToken;
-} catch (error) {
-  console.error('Ошибка получения токена GigaChat:', error.message);
-  console.error('Полный объект ошибки:', error);
 
-  if (error.response) {
-    console.error('Статус:', error.response.status);
-    console.error('Заголовки ответа:', error.response.headers);
-    console.error('Данные ответа:', error.response.data);
-    // Попробуем вывести как текст, если это не JSON
-    if (error.response.data) {
-      console.error('Тип данных ответа:', typeof error.response.data);
-      if (typeof error.response.data === 'object') {
-        console.error('Строковое представление:', JSON.stringify(error.response.data));
+    } catch (error) {
+      console.error('Ошибка получения токена GigaChat');
+
+      if (error.response) {
+        console.error('Статус:', error.response.status);
+        console.error('Ответ:', error.response.data);
       } else {
-        console.error('Сырые данные:', error.response.data);
+        console.error(error.message);
       }
-    }
-  } else if (error.request) {
-    console.error('Запрос был отправлен, но ответ не получен');
-    console.error('Объект запроса:', error.request);
-  } else {
-    console.error('Ошибка настройки запроса:', error.message);
-  }
 
-  throw new Error('Не удалось получить токен доступа');
-}
+      throw new Error('Не удалось получить токен доступа');
+    }
   }
 
   async generateText(prompt, systemPrompt = 'Ты полезный ассистент') {
     try {
       const token = await this.getAccessToken();
-      const response = await axios.post(this.apiUrl, {
-        model: 'GigaChat',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 500
-      }, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        httpsAgent: new https.Agent({ rejectUnauthorized: false }) // 👈 и здесь
-      });
 
-      const result = response.data.choices[0]?.message?.content;
+      const response = await axios.post(
+        this.apiUrl,
+        {
+          model: 'GigaChat',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 500
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          httpsAgent: new https.Agent({
+            rejectUnauthorized: false // ⚠️ убрать в production
+          })
+        }
+      );
+
+      const result = response.data.choices?.[0]?.message?.content;
+
       if (!result) {
         throw new Error('GigaChat вернул пустой ответ');
       }
+
       return result;
+
     } catch (error) {
-      console.error('Ошибка генерации текста:', error.message);
+      console.error('Ошибка генерации текста');
+
+      if (error.response) {
+        console.error('Статус:', error.response.status);
+        console.error('Ответ:', error.response.data);
+      } else {
+        console.error(error.message);
+      }
+
       throw new Error('Не удалось получить данные от GigaChat');
     }
   }
 
   async generatePostIdeas(topic) {
     const prompt = `Придумай 5 идей для постов на тему "${topic}". 
-      Каждая идея должна быть краткой, цепляющей и содержать заголовок.
-      Формат ответа: просто список через дефис, без лишнего текста.`;
-    return await this.generateText(prompt, 'Ты креативный кпирайтер');
+Каждая идея должна быть краткой, цепляющей и содержать заголовок.
+Формат ответа: просто список через дефис, без лишнего текста.`;
+
+    return this.generateText(prompt, 'Ты креативный копирайтер');
   }
 
   async getTrends() {
     const prompt = `Какие темы сейчас в топе в социальных сетях по категориям:
-      - Фитнес
-      - Музыка
-      - Кулинария
-      - Образование
-      Дай краткий список из 5 пунктов.`;
-    return await this.generateText(prompt, 'Ты маркетолог-аналитик');
+
+- Фитнес
+- Музыка
+- Кулинария
+- Образование
+
+Дай краткий список из 5 пунктов.`;
+
+    return this.generateText(prompt, 'Ты маркетолог-аналитик');
   }
 }
 
 export default new GigaChatService();
+
