@@ -42,14 +42,28 @@ class GigaChatService {
       return this.accessToken;
 } catch (error) {
   console.error('Ошибка получения токена GigaChat:', error.message);
+  console.error('Полный объект ошибки:', error);
+
   if (error.response) {
     console.error('Статус:', error.response.status);
-    console.error('Детали ответа:', error.response.data);
+    console.error('Заголовки ответа:', error.response.headers);
+    console.error('Данные ответа:', error.response.data);
+    // Попробуем вывести как текст, если это не JSON
+    if (error.response.data) {
+      console.error('Тип данных ответа:', typeof error.response.data);
+      if (typeof error.response.data === 'object') {
+        console.error('Строковое представление:', JSON.stringify(error.response.data));
+      } else {
+        console.error('Сырые данные:', error.response.data);
+      }
+    }
   } else if (error.request) {
     console.error('Запрос был отправлен, но ответ не получен');
+    console.error('Объект запроса:', error.request);
   } else {
     console.error('Ошибка настройки запроса:', error.message);
   }
+
   throw new Error('Не удалось получить токен доступа');
 }
   }
