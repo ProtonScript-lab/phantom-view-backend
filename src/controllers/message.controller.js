@@ -1,59 +1,94 @@
-import * as messageService from '../services/message.service.js';
-import logger from '../utils/logger.js';
 
-export const getConversations = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const conversations = await messageService.getUserConversations(userId);
-    res.json(conversations);
-  } catch (err) {
-    logger.error('Ошибка получения диалогов:', err);
-    next(err);
-  }
-};
+const messageService = require('../services/message.service');
 
-export const getMessages = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const { conversationId } = req.params;
-    const { limit = 50, before } = req.query;
-    const messages = await messageService.getMessages(conversationId, userId, parseInt(limit), before);
-    res.json(messages);
-  } catch (err) {
-    if (err.message === 'Нет доступа к этому диалогу') {
-      return res.status(403).json({ error: err.message });
+class MessageController {
+
+  async createConversation(req, res) {
+    try {
+      const userId = req.user.id;
+      const { otherUserId } = req.body;
+
+      const otherId = Number(otherUserId);
+
+      if (!otherId) {
+        return res.status(400).json({ error: 'Некорректный userId' });
+      }
+
+      if (otherId === userId) {
+        return res.status(400).json({ error: 'Нельзя создать диалог с самим собой' });
+      }
+
+      const conversation = await messageService.createConversation(userId, otherId);
+
+      res.json(conversation);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Ошибка создания диалога' });
     }
-    logger.error('Ошибка получения сообщений:', err);
-    next(err);
   }
-};
 
-export const sendMessage = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const { conversationId, content, type, mediaUrl } = req.body;
-    if (!conversationId) {
-      return res.status(400).json({ error: 'Не указан conversationId' });
-    }
-    const message = await messageService.sendMessage(userId, conversationId, content, type, mediaUrl);
-    res.status(201).json(message);
-  } catch (err) {
-    logger.error('Ошибка отправки сообщения:', err);
-    next(err);
-  }
-};
+  async sendMessage(req, res) {
+    try {
+      const userId = req.user.id;
+      const { conversationId, content, type = 'text', mediaUrl } = req.body;
 
-export const createConversation = async (req, res, next) => {
-  try {
-    const userId = req.user.id;
-    const { otherUserId } = req.body;
-    if (!otherUserId) {
-      return res.status(400).json({ error: 'Не указан otherUserId' });
+      const convId = Number(conversationId);
+
+      if (!convId) {
+        return res.status(400).json({ error: 'Некорректный conversationId' });
+      }
+
+      if (!content && !mediaUrl) {
+        return res.status(400).json({ error: 'Сообщение не может быть пустым' });
+      }
+
+      const allowedTypes = ['text', 'image', 'video'];
+
+      if (!allowedTypes.includes(type)) {
+        return res.status(400).json({ error: 'Неверный тип сообщения' });
+      }
+
+      const message = await messageService.sendMessage({
+        conversationId: convId,
+        senderId: userId,
+        content,
+        type,
+        mediaUrl
+      });
+
+      res.json(message);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Ошибка отправки сообщения' });
     }
-    const conversationId = await messageService.getOrCreateConversation(userId, otherUserId);
-    res.json({ conversationId });
-  } catch (err) {
-    logger.error('Ошибка создания диалога:', err);
-    next(err);
   }
-};
+
+  async getMessages(req, res) {
+    try {
+      const userId = req.user.id;
+      const conversationId = Number(req.params.conversationId);
+
+      if (!conversationId) {
+        return res.status(400).json({ error: 'Некорректный conversationId' });
+      }
+
+      const { limit = 50, before } = req.query;
+      const limitNum = Number(limit) || 50;
+
+      const messages = await messageService.getMessages(
+        conversationId,
+        userId,
+        limitNum,
+        before
+      );
+
+      res.json(messages);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Ошибка получения сообщений' });
+    }
+  }
+
+}
+
+module.exports = new MessageController();

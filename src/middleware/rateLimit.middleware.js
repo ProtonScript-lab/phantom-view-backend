@@ -1,15 +1,24 @@
+
 import rateLimit from 'express-rate-limit';
 
+// лимит для обычных API запросов
 export const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 минут
   max: 100,
-  message: { error: 'Слишком много запросов, попробуйте позже' },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  message: {
+    error: 'Слишком много запросов, попробуйте позже'
+  }
 });
 
+// лимит для авторизации
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 минут
   max: 5,
-  message: { error: 'Слишком много попыток входа, попробуйте позже' }
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'Слишком много попыток входа, попробуйте позже'
+  }
 });

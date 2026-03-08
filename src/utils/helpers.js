@@ -1,1 +1,6 @@
-export const generateRandomCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+import crypto from "crypto";
+
+export const generateRandomCode = () => {
+  const code = crypto.randomInt(0, 1000000);
+  return code.toString().padStart(6, "0");
+};

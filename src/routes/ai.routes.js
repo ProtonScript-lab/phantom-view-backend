@@ -1,3 +1,4 @@
+
 import express from 'express';
 import {
   generateIdeas,
@@ -8,8 +9,26 @@ import { authenticateToken, authorizeRole } from '../middleware/auth.middleware.
 
 const router = express.Router();
 
-router.post('/generate-ideas', authenticateToken, generateIdeas);
-router.get('/trends', authenticateToken, authorizeRole('creator'), getTrends);
-router.post('/enhance', authenticateToken, enhanceText);
+// Генерация идей
+router.post(
+  '/generate-ideas',
+  authenticateToken,
+  generateIdeas
+);
+
+// Получение трендов (только для creator)
+router.get(
+  '/trends',
+  authenticateToken,
+  authorizeRole('creator'),
+  getTrends
+);
+
+// Улучшение текста
+router.post(
+  '/enhance',
+  authenticateToken,
+  enhanceText
+);
 
 export default router;

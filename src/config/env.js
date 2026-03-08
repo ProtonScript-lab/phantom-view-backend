@@ -1,3 +1,4 @@
+
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -12,6 +13,7 @@ const requiredEnv = [
 ];
 
 const missing = requiredEnv.filter(key => !process.env[key]);
+
 if (missing.length) {
   console.error(`❌ Missing environment variables: ${missing.join(', ')}`);
   process.exit(1);

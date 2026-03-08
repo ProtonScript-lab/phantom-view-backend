@@ -1,23 +1,27 @@
-import express from 'express';
+
+import express from 'express'
 import {
   getBalance,
   getTransactions,
   requestWithdraw
-} from '../controllers/balance.controller.js';
-import { authenticateToken } from '../middleware/auth.middleware.js';
+} from '../controllers/balance.controller.js'
 
-const router = express.Router();
+import { authenticateToken } from '../middleware/auth.middleware.js'
+import { withdrawLimiter } from '../middleware/rateLimit.middleware.js'
+import { validateWithdraw } from '../middleware/validation.middleware.js'
 
-// Все маршруты защищены аутентификацией
-router.use(authenticateToken);
+const router = express.Router()
 
-// Получить текущий баланс пользователя
-router.get('/', getBalance);
+// все маршруты требуют авторизацию
+router.use(authenticateToken)
 
-// Получить историю транзакций
-router.get('/transactions', getTransactions);
+// баланс пользователя
+router.get('/', getBalance)
 
-// Создать запрос на вывод средств
-router.post('/withdraw', requestWithdraw);
+// история транзакций
+router.get('/transactions', getTransactions)
 
-export default router;
+// вывод средств
+router.post('/withdraw', withdrawLimiter, validateWithdraw, requestWithdraw)
+
+export default router

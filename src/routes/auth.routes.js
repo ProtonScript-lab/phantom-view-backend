@@ -1,21 +1,47 @@
-import express from 'express';
-import { 
-  register, 
-  login, 
-  sendVerificationCode, 
-  verifyEmail 
-} from '../controllers/auth.controller.js';
-import { authenticateToken } from '../middleware/auth.middleware.js';
-import { validateRegister, validateLogin } from '../middleware/validation.middleware.js';
-import { authLimiter } from '../middleware/rateLimit.middleware.js';
 
-const router = express.Router();
+import express from 'express'
+import {
+  register,
+  login,
+  sendVerificationCode,
+  verifyEmail
+} from '../controllers/auth.controller.js'
 
-router.post('/register', authLimiter, validateRegister, register);
-router.post('/login', authLimiter, validateLogin, login);
+import { authenticateToken } from '../middleware/auth.middleware.js'
+import { validateRegister, validateLogin } from '../middleware/validation.middleware.js'
+import { authLimiter } from '../middleware/rateLimit.middleware.js'
 
-// Новые защищённые маршруты для верификации email
-router.post('/send-verification', authenticateToken, sendVerificationCode);
-router.post('/verify-email', authenticateToken, verifyEmail);
+const router = express.Router()
 
-export default router;
+// регистрация
+router.post(
+  '/register',
+  authLimiter,
+  validateRegister,
+  register
+)
+
+// вход
+router.post(
+  '/login',
+  authLimiter,
+  validateLogin,
+  login
+)
+
+// отправка кода подтверждения email
+router.post(
+  '/send-verification',
+  authenticateToken,
+  authLimiter,
+  sendVerificationCode
+)
+
+// подтверждение email
+router.post(
+  '/verify-email',
+  authenticateToken,
+  verifyEmail
+)
+
+export default router
