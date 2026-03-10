@@ -1,4 +1,3 @@
-
 import rateLimit from 'express-rate-limit';
 
 // лимит для обычных API запросов

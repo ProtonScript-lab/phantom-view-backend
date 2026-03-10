@@ -1,4 +1,3 @@
-
 import * as notificationService from '../services/notification.service.js'
 import logger from '../utils/logger.js'
 

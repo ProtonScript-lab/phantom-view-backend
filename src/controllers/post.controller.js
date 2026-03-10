@@ -1,4 +1,3 @@
-
 import * as postService from '../services/post.service.js'
 import logger from '../utils/logger.js'
 

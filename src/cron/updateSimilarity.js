@@ -1,4 +1,3 @@
-
 import { updateSimilarity } from '../services/similarity.service.js'
 import logger from '../utils/logger.js'
 

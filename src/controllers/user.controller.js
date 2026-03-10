@@ -1,4 +1,3 @@
-
 import * as userService from '../services/user.service.js'
 import logger from '../utils/logger.js'
 

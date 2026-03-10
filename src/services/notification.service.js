@@ -1,4 +1,3 @@
-
 import { pool } from '../models/db.js';
 import logger from '../utils/logger.js';
 
