@@ -8,7 +8,8 @@ const requiredEnv = [
   'YOOKASSA_SECRET_KEY',
   'UPDATE_SECRET',
   'GIGACHAT_CLIENT_ID',
-  'GIGACHAT_CLIENT_SECRET'
+  'GIGACHAT_CLIENT_SECRET',
+  'FRONTEND_URL' // Добавлено, чтобы избежать случайного использования localhost в продакшене
 ];
 
 const missing = requiredEnv.filter(key => !process.env[key]);
@@ -32,5 +33,5 @@ export const config = {
   },
   port: process.env.PORT || 3001,
   nodeEnv: process.env.NODE_ENV || 'development',
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173'
+  frontendUrl: process.env.FRONTEND_URL // Убираем fallback, так как переменная теперь обязательна
 };

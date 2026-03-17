@@ -18,8 +18,12 @@ const app = express()
 const allowedOrigins = [
   config.frontendUrl,
   'http://localhost:5173',
-  'http://localhost:3000'
-]
+  'http://localhost:3000',
+  'https://phantom-view.ru',
+  'https://www.phantom-view.ru',
+  // Если используете временный адрес Amvera, тоже можно добавить
+  'https://phantom-view-frontend-вашлогин.amvera.io'
+];
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
