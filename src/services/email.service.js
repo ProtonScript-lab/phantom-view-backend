@@ -4,44 +4,46 @@ import logger from '../utils/logger.js';
 class EmailService {
   constructor() {
     this.apiKey = process.env.EMAIL_PASSWORD; // API-ключ NotiSend
-    this.fromEmail = process.env.EMAIL_FROM || 'noreply@phantom-view.ru';
+    this.fromEmail = process.env.EMAIL_FROM;   // подтверждённый отправитель (noreply@phantom-view.ru)
     this.fromName = 'Phantom View';
-    this.apiUrl = 'https://api.notisend.ru/v1/messages'; // эндпоинт отправки
+    this.apiUrl = 'https://api.notisend.ru/v1/email/messages';
   }
 
+  /**
+   * Отправка кода подтверждения через API NotiSend
+   * @param {string} to - Email получателя
+   * @param {string} code - 6-значный код
+   * @returns {Promise<object>}
+   */
   async sendVerificationCode(to, code) {
     if (!to || !code) {
       throw new Error('Email или код не указан');
     }
 
     const payload = {
-      from: {
-        email: this.fromEmail,
-        name: this.fromName
-      },
-      to: [
-        { email: to }
-      ],
+      from_email: this.fromEmail,
+      from_name: this.fromName,
+      to: to,
       subject: 'Подтверждение email на Phantom View',
       html: this._getVerificationHtml(code),
       text: `Ваш код подтверждения: ${code}`
     };
 
     try {
-      logger.info(`Попытка отправки email через API NotiSend на ${to}`);
+      logger.info(`Отправка email через API NotiSend на ${to}`);
       const response = await axios.post(this.apiUrl, payload, {
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json'
         },
-        timeout: 10000 // 10 секунд таймаут
+        timeout: 10000 // 10 секунд
       });
 
-      if (response.data && response.data.id) {
-        logger.info('Email отправлен через API', { to, messageId: response.data.id });
+      if (response.status >= 200 && response.status < 300) {
+        logger.info('Email успешно отправлен', { to, messageId: response.data?.id });
         return response.data;
       } else {
-        throw new Error('Неизвестный ответ от API');
+        throw new Error(`API вернул статус ${response.status}`);
       }
     } catch (error) {
       logger.error('Ошибка отправки email через API', {
@@ -70,10 +72,12 @@ class EmailService {
   }
 
   async sendPasswordReset(to, token) {
+    if (!to || !token) throw new Error('Email или token не указан');
     const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
     const payload = {
-      from: { email: this.fromEmail, name: this.fromName },
-      to: [{ email: to }],
+      from_email: this.fromEmail,
+      from_name: this.fromName,
+      to: to,
       subject: 'Сброс пароля на Phantom View',
       html: this._getResetHtml(resetLink),
       text: `Для сброса пароля перейдите по ссылке: ${resetLink}`
@@ -81,10 +85,13 @@ class EmailService {
 
     try {
       const response = await axios.post(this.apiUrl, payload, {
-        headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
         timeout: 10000
       });
-      logger.info('Письмо сброса пароля отправлено', { to, messageId: response.data.id });
+      logger.info('Письмо сброса пароля отправлено', { to, messageId: response.data?.id });
       return response.data;
     } catch (error) {
       logger.error('Ошибка отправки письма сброса пароля', { to, error: error.message });
