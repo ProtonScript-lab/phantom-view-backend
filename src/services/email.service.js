@@ -1,68 +1,55 @@
-import nodemailer from 'nodemailer';
+import axios from 'axios';
 import logger from '../utils/logger.js';
 
 class EmailService {
   constructor() {
-    const host = process.env.EMAIL_HOST || 'smtp.notisend.ru';
-    const port = parseInt(process.env.EMAIL_PORT) || 587;
-    const secure = port === 465;
-
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-      logger.warn('SMTP переменные окружения (EMAIL_USER, EMAIL_PASSWORD) не заданы');
-    }
-
-    this.transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 15000,
-    });
-
-    this.from = process.env.EMAIL_FROM || process.env.EMAIL_USER;
-    this.frontendUrl = process.env.FRONTEND_URL || '';
+    this.apiKey = process.env.EMAIL_PASSWORD; // API-ключ NotiSend
+    this.fromEmail = process.env.EMAIL_FROM || 'noreply@phantom-view.ru';
+    this.fromName = 'Phantom View';
+    this.apiUrl = 'https://api.notisend.ru/v1/messages'; // эндпоинт отправки
   }
 
-  /**
-   * Отправка кода подтверждения с повторными попытками
-   * @param {string} to - Email получателя
-   * @param {string} code - 6-значный код
-   * @param {number} retries - количество повторных попыток (по умолчанию 2)
-   */
-  async sendVerificationCode(to, code, retries = 2) {
+  async sendVerificationCode(to, code) {
     if (!to || !code) {
       throw new Error('Email или код не указан');
     }
 
-    const mailOptions = {
-      from: `"Phantom View" <${this.from}>`,
-      to,
+    const payload = {
+      from: {
+        email: this.fromEmail,
+        name: this.fromName
+      },
+      to: [
+        { email: to }
+      ],
       subject: 'Подтверждение email на Phantom View',
       html: this._getVerificationHtml(code),
+      text: `Ваш код подтверждения: ${code}`
     };
 
-    for (let attempt = 1; attempt <= retries + 1; attempt++) {
-      try {
-        logger.info(`Попытка отправки email на ${to} (попытка ${attempt})`);
-        const info = await this.transporter.sendMail(mailOptions);
-        logger.info('Email отправлен', { to, messageId: info.messageId });
-        return info;
-      } catch (error) {
-        logger.error(`Ошибка отправки email (попытка ${attempt})`, { to, error: error.message });
-        if (attempt === retries + 1) {
-          throw new Error(`Не удалось отправить письмо: ${error.message}`);
-        }
-        // Пауза перед повторной попыткой
-        await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      logger.info(`Попытка отправки email через API NotiSend на ${to}`);
+      const response = await axios.post(this.apiUrl, payload, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000 // 10 секунд таймаут
+      });
+
+      if (response.data && response.data.id) {
+        logger.info('Email отправлен через API', { to, messageId: response.data.id });
+        return response.data;
+      } else {
+        throw new Error('Неизвестный ответ от API');
       }
+    } catch (error) {
+      logger.error('Ошибка отправки email через API', {
+        to,
+        error: error.response?.data || error.message,
+        stack: error.stack
+      });
+      throw new Error(`Не удалось отправить письмо: ${error.message}`);
     }
   }
 
@@ -83,40 +70,37 @@ class EmailService {
   }
 
   async sendPasswordReset(to, token) {
-    if (!to || !token) throw new Error('Email или token не указан');
-    const resetLink = `${this.frontendUrl}/reset-password?token=${token}`;
-    const mailOptions = {
-      from: `"Phantom View" <${this.from}>`,
-      to,
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    const payload = {
+      from: { email: this.fromEmail, name: this.fromName },
+      to: [{ email: to }],
       subject: 'Сброс пароля на Phantom View',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color:#ff385c">Сброс пароля</h2>
-          <p>Для сброса пароля нажмите кнопку ниже</p>
-          <a href="${resetLink}" style="display:inline-block;background:#ff385c;color:white;padding:12px 24px;text-decoration:none;border-radius:30px;margin:20px 0">Сбросить пароль</a>
-          <p>Если вы не запрашивали сброс пароля — просто проигнорируйте это письмо.</p>
-        </div>
-      `,
+      html: this._getResetHtml(resetLink),
+      text: `Для сброса пароля перейдите по ссылке: ${resetLink}`
     };
+
     try {
-      const info = await this.transporter.sendMail(mailOptions);
-      logger.info('Письмо сброса пароля отправлено', { to, messageId: info.messageId });
-      return info;
+      const response = await axios.post(this.apiUrl, payload, {
+        headers: { 'Authorization': `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+        timeout: 10000
+      });
+      logger.info('Письмо сброса пароля отправлено', { to, messageId: response.data.id });
+      return response.data;
     } catch (error) {
       logger.error('Ошибка отправки письма сброса пароля', { to, error: error.message });
       throw new Error('Не удалось отправить письмо');
     }
   }
 
-  async verifyConnection() {
-    try {
-      await this.transporter.verify();
-      logger.info('SMTP подключение успешно');
-      return true;
-    } catch (error) {
-      logger.error('Ошибка подключения SMTP', error);
-      return false;
-    }
+  _getResetHtml(resetLink) {
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color:#ff385c">Сброс пароля</h2>
+        <p>Для сброса пароля нажмите кнопку ниже</p>
+        <a href="${resetLink}" style="display:inline-block;background:#ff385c;color:white;padding:12px 24px;text-decoration:none;border-radius:30px;margin:20px 0">Сбросить пароль</a>
+        <p>Если вы не запрашивали сброс пароля — просто проигнорируйте это письмо.</p>
+      </div>
+    `;
   }
 }
 
