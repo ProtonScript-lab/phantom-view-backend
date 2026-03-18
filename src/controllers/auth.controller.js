@@ -18,10 +18,15 @@ export const register = async (req, res, next) => {
       return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
     }
 
-    // === ШАГ 2: DNS-валидация email ===
-    const validation = await validateEmailDns(email);
-    if (!validation.isValid) {
-      return res.status(400).json({ error: validation.reason || 'Указанный email недействителен' });
+    // === ШАГ 2: DNS-валидация email (если падает, пропускаем, но логируем) ===
+    try {
+      const validation = await validateEmailDns(email);
+      if (!validation.isValid) {
+        return res.status(400).json({ error: validation.reason || 'Указанный email недействителен' });
+      }
+    } catch (dnsErr) {
+      logger.warn('DNS-валидация не удалась, но регистрация продолжается', { email, error: dnsErr.message });
+      // Если DNS не работает, пропускаем проверку
     }
 
     // === ШАГ 3: Регистрация пользователя ===
@@ -149,11 +154,8 @@ export const resendVerification = async (req, res, next) => {
 
     const code = await authService.setVerificationCode(user.id);
     await emailService.sendVerificationCode(email, code);
-    res.json({ message: 'Код подтверждения отправлен повторно' });
+    res.json({ message: 'Код отправлен повторно' });
   } catch (err) {
-    if (err.message === 'Пользователь не найден') {
-      return res.status(404).json({ error: 'Пользователь не найден' });
-    }
     logger.error('Ошибка повторной отправки кода', err);
     next(err);
   }
