@@ -4,7 +4,7 @@ export const validateRegister = [
   body('username')
     .isLength({ min: 3, max: 20 }).withMessage('Имя пользователя должно быть от 3 до 20 символов')
     .matches(/^[a-zA-Z0-9_]+$/).withMessage('Имя может содержать только буквы, цифры и _'),
-  body('email').isEmail().withMessage('Некорректный email').normalizeEmail(),
+  body('email').isEmail().withMessage('Некорректный email'),
   body('password').isLength({ min: 6 }).withMessage('Пароль должен быть не менее 6 символов'),
   body('role').optional().isIn(['subscriber', 'creator']).withMessage('Роль должна быть subscriber или creator'),
   body('fullName').optional().isLength({ max: 100 }).withMessage('Имя слишком длинное'),
